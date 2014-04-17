@@ -13,9 +13,9 @@ from StringIO import StringIO
 from collections import namedtuple
 
 # Configuration
-server = "techhouse.org"
-basedn = "dc=techhouse,dc=org"
-maildomain = "techhouse.org"
+server = "master.sec.com:389"
+basedn = "dc=pplive,dc=cn"
+maildomain = "pptv.com"
 
 ################################################################################
 # Changetypes
@@ -38,9 +38,12 @@ Transform = namedtuple("Transform","dn attr fun")
 def getNextId(database="passwd"):
     """Return the next available id for the provided getent(1) database."""
     getent = Popen(["getent", database], stdout=PIPE)
+    print getent
     awk = Popen(["awk", "-F:", "($3>1000) && ($3<10000) && ($3>maxuid) { maxuid=$3; } END { print maxuid+1; }"],stdin=getent.stdout,stdout=PIPE)
+    print awk
     getent.stdout.close()
     highest = awk.communicate()[0]
+    print highest
     return highest.strip()
 
 def getBindDn(user=""):
@@ -213,10 +216,10 @@ def handleLDIF(connection, ldif):
     except ldap.NO_SUCH_OBJECT:
         print "No appropriate object was found in the directory. This may be caused by a previous failure to add an object that you are now trying to modify. The associated change is:", ldif
 
-def getConnection(dn, server, passwd="", external=False, secure=False):
+def getConnection(dn, server, passwd="pp12!@", external=False, secure=False):
     # Try to use external SASL authentication if we want it, are root,
     # or no dn was specified with which we should bind.
-    external = not os.getuid() or external or not dn
+    #external = not os.getuid() or external or not dn
     connection = ldap.initialize("ldapi:///" if external else "ldap://%s" % server)
     try:
         if secure: connection.start_tls_s()
@@ -241,7 +244,7 @@ def getConnection(dn, server, passwd="", external=False, secure=False):
         return connection
 
 def update(actions):
-    connection = getConnection(getBindDn(),server)
+    connection = getConnection('cn=Manager,dc=pplive,dc=cn',server)
     try:
         # Process all of our actions.
         map(lambda action : handleLDIF(connection,action),actions)
