@@ -38,12 +38,9 @@ Transform = namedtuple("Transform","dn attr fun")
 def getNextId(database="passwd"):
     """Return the next available id for the provided getent(1) database."""
     getent = Popen(["getent", database], stdout=PIPE)
-    print getent
     awk = Popen(["awk", "-F:", "($3>1000) && ($3<10000) && ($3>maxuid) { maxuid=$3; } END { print maxuid+1; }"],stdin=getent.stdout,stdout=PIPE)
-    print awk
     getent.stdout.close()
     highest = awk.communicate()[0]
-    print highest
     return highest.strip()
 
 def getBindDn(user=""):
@@ -68,7 +65,7 @@ def gecosChange(value, position):
     """Return a lambda that can modify a gecos at the spcified position."""
     return lambda gecos : ','.join(chainUpdate(gecos.split(','),value,position))
 
-def useradd(user,groups=[],uid=0,gid=0,name="",home="",shell="/bin/bash",gecos="",passwd='{crypt}sadtCr0CILzv2',room='',phone='',other=''):
+def useradd(user,uid,groups,shadow_change,gid,name="",home="",shell="/bin/bash",gecos="",passwd='{CRYPT}crivPCxzfxzAA',room='',phone='',other=''):
     uid = str(uid) if uid else getNextId()
     name = user if not name else name
     home = home if home else "/home/%s" % user
@@ -77,28 +74,29 @@ def useradd(user,groups=[],uid=0,gid=0,name="",home="",shell="/bin/bash",gecos="
     attrs = [ ('uid', [user]),
               ('cn', [name]),
               ('sn', [name]),
-              ('objectClass', ['inetOrgPerson', 'posixAccount', 'top', 'shadowAccount']),
-              ('shadowMax', ['99999']),
-              ('shadowWarning', ['14']),
+              ('objectClass', ['inetOrgPerson', 'posixAccount', 'person', 'shadowAccount','organizationalPerson']),
+              ('shadowMax', ['90']),
+              ('shadowWarning', ['89']),
               ('loginShell', [shell]),
               ('uidNumber', [uid]),
-              ('gidNumber', [uid]),
+              ('gidNumber', [gid]),
               ('userPassword',[passwd]),
+              ('shadowLastChange',[shadow_change]),
               ('homeDirectory', ["/home/%s" % user]),
               ('mail', ["%s@%s" % (user, maildomain)]),
               ('gecos', [gecos if gecos else "%s,%s,%s,%s" % (name,room,phone,other)]) ]
     results.append(Add(dn,attrs))
-    results.extend(groupadd(user,gid=(gid if gid else uid)))
     results.extend(usermod(user,groups=groups,append=True))
     return results
 
-def groupadd(group,gid=0):
+def groupadd(group,gid,desc):
     gid = str(gid) if gid else getNextId(database="group")
     dn = "cn=%s,ou=Group,%s" % (group, basedn)
     results = []
-    attrs = [ ('objectClass', ['posixGroup','top']),
+    attrs = [ ('objectClass', ['posixGroup']),
               ('cn', group),
-              ('gidNumber', gid) ]
+              ('gidNumber', gid),
+              ('description',desc) ]
     results.append(Add(dn,attrs))
     return results
 
@@ -248,5 +246,35 @@ def update(actions):
     try:
         # Process all of our actions.
         map(lambda action : handleLDIF(connection,action),actions)
+    finally:
+        connection.unbind()
+
+def get_groups():
+    connection = getConnection('cn=Manager,dc=pplive,dc=cn',server)
+    try:
+        l = []
+        groups = connection.search_s('ou=Group,dc=pplive,dc=cn',1)
+        for g in groups:
+            l.append(g[1]['cn'][0])
+        return l
+    finally:
+        connection.unbind()
+
+def get_group_userlist(g_name):
+    connection = getConnection('cn=Manager,dc=pplive,dc=cn',server)
+    try:
+        groups = connection.search_s('cn=%s,ou=Group,dc=pplive,dc=cn' % g_name,2)
+        return groups[0][1]['memberUid']
+    finally:
+        connection.unbind()    
+
+def get_users():
+    connection = getConnection('cn=Manager,dc=pplive,dc=cn',server)
+    try:
+        l = []
+        groups = connection.search_s('ou=People,dc=pplive,dc=cn',1)
+        for g in groups:
+            l.append(g[1]['cn'][0])
+        return l
     finally:
         connection.unbind()
